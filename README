@@ -1,0 +1,5 @@
+Assumptions:
+1. gen_rand can generate numbers up to the length of 19.
+2. gen_rand expects user to enter the file name only where the 
+random number should be stored. All the random number files
+stored in home directory.
