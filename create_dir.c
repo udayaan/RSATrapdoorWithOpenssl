@@ -1,18 +1,20 @@
+/*
+write perm
+use do_exec to mkdir
+set default acls
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/xattr.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include "acl.h"
+#include<dirent.h>
 #include <pwd.h>
 #include <grp.h>
-#include "acl.h"
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
 
 int isdir(char* path) 
 {
@@ -197,7 +199,6 @@ struct acl *load_acl(char *path)
 
 void save_acl(char* path, struct acl* meta) {
 
-    // printf("owner : %s\n",meta->owner);
     if (setxattr(path, OWNER, meta->owner, strlen(meta->owner), 0) != 0)
     {
         printf("%s\n", strerror(errno));
@@ -307,129 +308,6 @@ void get_name(char* name, char* mod) {
     name = realloc(name,(size+1)*sizeof(char));
     name = substring(name,mod,colon[0]+1,colon[1]);
     return;
-}
-
-int  checknameduser_or_grop_read_perm(char* username, struct acl* meta, int flag) {
-    char* list;
-    if(flag==0){
-        list = meta->named_users;
-    } 
-    else if(flag==1) {
-        list = meta->named_groups;
-    }
-
-    int len;
-    char** names = comma_split(&len,list);
-    char* perm = (char*)malloc(sizeof(char));
-    perm[0] = '\0';
-    char* mask = meta->mask;
-
-    for (int i=0;i<len;++i) {
-        char* ugname = (char*)malloc(sizeof(char));
-        get_name(ugname,names[i]);
-        if(strcmp(ugname,username)==0) {
-            get_perm_value(perm,names[i]);
-            free(ugname);
-            break;   
-        }
-        free(ugname);
-    }
-
-    if(strlen(perm)!=0) {
-        if(strlen(mask)==0 && perm[0]-'r'==0){
-            free(perm);
-            return 1;
-        }
-        else if(mask[0]-'r'==0 && perm[0]-'r'==0){
-            free(perm);
-            return 1;
-        }
-        else{
-            free(perm);
-            printf("Permission denied.\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    return 0;
-}
-
-void check_read_perm(uid_t ruid, gid_t gid, char* path) {
-
-    struct acl* direc = load_acl(path);
-
-    struct passwd* user; 
-    if((user=getpwuid(ruid))==NULL) {
-        printf("%s\n",strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    struct stat dirstat;
-    if(stat(path,&dirstat)!=0) {
-        printf("%s\n",strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    char* username = user->pw_name;
-    char* perm;
-    char* mask = direc->mask;
-
-    if(dirstat.st_uid == ruid) {
-        perm  = direc->owner;
-        if(perm[0]-'r'==0){
-            return;
-        }
-        else{
-            printf("Permission denied.\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    if(dirstat.st_gid == gid) {
-        perm = direc->onwer_group;
-        if(strlen(mask)==0 && perm[0]-'r'==0){
-            return;
-        }
-        else if(mask[0]-'r'==0 && perm[0]-'r'==0){
-            return;
-        }
-        else{
-            printf("Permission denied.\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    int flag;
-    flag =  checknameduser_or_grop_read_perm(username,direc,0);
-    if(flag==1){
-        return;
-    }
-    
-    int ngrps=1000;
-    int* grps=(int*)malloc(ngrps*sizeof(gid_t));
-    getgrouplist(username,gid,grps,&ngrps);
-    struct group* gp;
-    for(int j=0;j<ngrps;++j) {
-        gid_t g = grps[j];
-        gp = getgrgid(g);
-        if(gp!=NULL){
-            flag =  checknameduser_or_grop_read_perm(gp->gr_name,direc,1);
-            if(flag==1){
-                return;
-            }
-        } 
-    }
-
-    perm = direc->others;
-    if(strlen(mask)==0 && perm[0]-'r'==0){
-
-        return;
-    }
-    else if(mask[0]-'r'==0 && perm[0]-'r'==0){
-        return;
-    }
-    else{
-        printf("Permission denied.\n");
-        exit(EXIT_FAILURE);
-    }
 }
 
 int  checknameduser_or_grop_write_perm(char* username, struct acl* meta, int flag) {
@@ -636,164 +514,33 @@ void copy_default(char* path, struct acl* meta)
     return;
 }
 
-int readShadow(char* uname, char** saltptr, char** passptr){
-
-    FILE *f;
-    f = fopen("/etc/shadow","r");
-    if(f==NULL) {
-        printf("Cannot open /etc/shadow/.\n");
-        exit(0);
-    }
-
-    fseek(f,0L,SEEK_END);
-    long int size = ftell(f);
-    fclose(f);
-
-    // printf("%ld\n",size);
-    f = fopen("/etc/shadow","r");
-    if(f==NULL) {
-        printf("Cannot open /etc/shadow/.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    char buff[size+1];
-    char c;
-    long int i=0;
-    c = fgetc(f);
-    while(c!=EOF) {
-        buff[i++] = c;
-        c = fgetc(f);
-    }
-    buff[i++]='\0';
-    fclose(f);
-    // printf("%s\n",buff);
-
-    i=0;
-    char* pass;
-    char* salt;
-    while(i<=size) {
-        if(buff[i]==uname[0]){
-            long int j = i; 
-            int k = 0;
-            int namelen = strlen(uname);
-            while(buff[j++]==uname[k++]) {
-                if(k==namelen) break;
-            }
-            if(k!=namelen) {i++;continue;}
-
-            int cdollar = 0;
-            while(cdollar<2) {
-                if(buff[j++]=='$') cdollar++;
-            }
-            salt = (char *)malloc(sizeof(char));
-            pass = (char *)malloc(sizeof(char));
-            int saltlen = 0;
-            int passlen = 0;
-            while(buff[j]!='$') {
-                salt[saltlen++] = buff[j++];
-                salt = (char*)realloc(salt,sizeof(char)*(saltlen+1));
-            }
-            salt[saltlen] = '\0';
-            j++;
-            while(buff[j]!=':') {
-                pass[passlen++] = buff[j++];
-                pass = (char*)realloc(pass,sizeof(char)*(passlen+1));
-            }
-            pass[passlen] = '\0';
-        }
-        i++;
-    }
-    if(strlen(salt)==0 || strlen(pass)==0) return -1;
-    *saltptr = salt;
-    *passptr = pass;
-    return 0;
-}
-
-void HMAC_sign(FILE* in, FILE* out, EVP_PKEY* pkey) {
-
-    EVP_MD_CTX* ctx;
-    char* sign; size_t siglen;
-
-    ctx = EVP_MD_CTX_create();
-
-    if(EVP_DigestInit_ex(ctx,EVP_get_digestbyname("SHA256"),NULL)!=1) {
-        printf("EVP_DigestInit_ex Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    if(EVP_DigestSignInit(ctx,NULL,EVP_get_digestbyname("SHA256"),NULL,pkey)!=1) {
-        printf("EVP_DigestSignInit Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    while(1) {
-        char* inbuf=malloc(sizeof(char)*17);
-        size_t inlen = fread(inbuf,1,16,in);
-
-        if(inlen<=0) break;
-
-        if(EVP_DigestSignUpdate(ctx,inbuf,inlen)!=1) {
-            printf("EVP_DigestSignUpdate Failed.\n");
-            EVP_MD_CTX_destroy(ctx);
-            abort();
-        }
-
-        free(inbuf);
-    }
-
-    size_t len;
-    if(EVP_DigestSignFinal(ctx, NULL, &len)!=1) {
-        printf("EVP_DigestSignFinal(1) Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    sign = (char*)malloc(sizeof(char)*len);
-    siglen = len;
-
-    if(EVP_DigestSignFinal(ctx, sign, &siglen)!=1) {
-        printf("EVP_DigestSignFinal(2) Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    fwrite(sign,1,siglen,out);
-
-    EVP_MD_CTX_destroy(ctx);
-    return;
-}
-
 int main(int argc, char *argv[])
 {
+    printf("Current effective user id:%d\n",geteuid());
+    
     uid_t ruid = getuid();
-    struct passwd* user;
-    user = getpwuid(ruid);
+    gid_t gid = getgid();
 
-    char** saltptr=(char**)malloc(0);
-    char** passptr=(char**)malloc(0);
-    readShadow(user->pw_name,saltptr,passptr);
+    char* parentdir = parentdirname(argv[1]);
+    check_write_perm(ruid,gid,parentdir);
+    free(parentdir);
 
-    EVP_PKEY *key = EVP_PKEY_new_mac_key(EVP_PKEY_HMAC,NULL,*passptr,strlen(*passptr));
-
-    char* filesign=argv[1];
-    strcat(filesign,".sign");
-
-    FILE* out = fopen(filesign,"wb");
-    HMAC_sign(stdin,out,key);
-    fclose(out);
-
+    if(mkdir(argv[1],0777)!=0) {
+        printf("%s\n",strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    chown(argv[1],ruid,gid);
     chmod(argv[1],0600);
+
     struct acl* meta = load_acl(argv[1]);
-    meta->owner="r--";
-    meta->onwer_group="---";
-    meta->others = "---";
-    meta->mask="";
-    meta->named_groups="";
-    meta->named_users="";
+    meta->owner="rw-";
+    meta->onwer_group="r--";
+    meta->others = "r--";
+    copy_default(argv[1],meta);
     save_acl(argv[1],meta);
-    chown(argv[1],getuid(),getgid());
+    
+    setuid(getuid());
+    printf("Current effective user id:%d\n",geteuid());
 
     exit(EXIT_SUCCESS);
 }

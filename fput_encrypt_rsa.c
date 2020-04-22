@@ -1,5 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -552,6 +553,49 @@ void check_write_perm(uid_t ruid, gid_t gid, char* path) {
     }
 }
 
+char* readfile(char* path)
+{
+    char* agrs1[] = {"/bin/cat",path,(char*)0};
+    int size=0;
+    char* content = (char*)malloc(sizeof(char));
+    content[0] = '\0';
+
+    int exit_status;
+    int fd[2];
+    pipe(fd);
+
+    int p = fork();
+
+    if(p==0) {
+
+        close(1);
+        dup(fd[1]);
+        close(fd[0]);
+        close(fd[1]);
+
+        if((exit_status = execv(agrs1[0],agrs1))!=0) {
+            printf("%s\n",strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        exit(EXIT_SUCCESS);
+    }
+    
+    else if (p>0) {
+        close(fd[1]);
+        waitpid(p,&exit_status,0);
+        
+        char buf[1];
+        while(read(fd[0],buf,1)>0) {
+            content[size] = buf[0];
+            size+=1;
+            content = (char*)realloc(content,(size+1)*sizeof(char));
+        }
+        content[size]='\0';
+        close(fd[0]);
+    }
+    return content;
+}
+
 char* parentdirname(char* path) 
 {
     char * prevdir = (char*)malloc(sizeof(char));
@@ -709,91 +753,75 @@ int readShadow(char* uname, char** saltptr, char** passptr){
     return 0;
 }
 
-void HMAC_sign(FILE* in, FILE* out, EVP_PKEY* pkey) {
+int do_crypt(FILE *in, FILE *out, char* key, char* iv, int do_encrypt)
+{
+    /* Allow enough space in output buffer for additional block */
+    unsigned char *inbuf, *outbuf;
+    int inlen, outlen;
+    EVP_CIPHER_CTX *ctx;
+    
 
-    EVP_MD_CTX* ctx;
-    char* sign; size_t siglen;
+    /* Don't set key or IV right away; we want to check lengths */
+    ctx = EVP_CIPHER_CTX_new();
+    EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, NULL, NULL, do_encrypt);
+    OPENSSL_assert(EVP_CIPHER_CTX_key_length(ctx) == 16);
+    OPENSSL_assert(EVP_CIPHER_CTX_iv_length(ctx) == 16);
 
-    ctx = EVP_MD_CTX_create();
+    /* Now we can set key and IV */
+    EVP_CipherInit_ex(ctx, NULL, NULL, key, iv, do_encrypt);
 
-    if(EVP_DigestInit_ex(ctx,EVP_get_digestbyname("SHA256"),NULL)!=1) {
-        printf("EVP_DigestInit_ex Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
+    while(1)
+    {
+        inbuf = (char*)malloc(sizeof(char)*16);
+        outbuf = (char*)malloc(sizeof(char)*32);
+        inlen = fread(inbuf, 1, 16, in);
+        if(inlen <=0) break;
 
-    if(EVP_DigestSignInit(ctx,NULL,EVP_get_digestbyname("SHA256"),NULL,pkey)!=1) {
-        printf("EVP_DigestSignInit Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    while(1) {
-        char* inbuf=malloc(sizeof(char)*17);
-        size_t inlen = fread(inbuf,1,16,in);
-
-        if(inlen<=0) break;
-
-        if(EVP_DigestSignUpdate(ctx,inbuf,inlen)!=1) {
-            printf("EVP_DigestSignUpdate Failed.\n");
-            EVP_MD_CTX_destroy(ctx);
+        if(!EVP_CipherUpdate(ctx, outbuf, &outlen, inbuf, inlen))
+        {
+            /* Error */
+            EVP_CIPHER_CTX_free(ctx);
             abort();
         }
-
+        fwrite(outbuf, 1, outlen, out);
         free(inbuf);
+        free(outbuf);
     }
-
-    size_t len;
-    if(EVP_DigestSignFinal(ctx, NULL, &len)!=1) {
-        printf("EVP_DigestSignFinal(1) Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
+    outbuf = (char*)malloc(sizeof(char)*32);
+    if(!EVP_CipherFinal_ex(ctx, outbuf, &outlen))
+    {
+        /* Error */
+        EVP_CIPHER_CTX_free(ctx);
         abort();
     }
-
-    sign = (char*)malloc(sizeof(char)*len);
-    siglen = len;
-
-    if(EVP_DigestSignFinal(ctx, sign, &siglen)!=1) {
-        printf("EVP_DigestSignFinal(2) Failed.\n");
-        EVP_MD_CTX_destroy(ctx);
-        abort();
-    }
-
-    fwrite(sign,1,siglen,out);
-
-    EVP_MD_CTX_destroy(ctx);
-    return;
+    fwrite(outbuf, 1, outlen, out);
+    free(outbuf);
+    EVP_CIPHER_CTX_free(ctx);
+    return 1;
 }
 
 int main(int argc, char *argv[])
 {
+    char* keyfile = argv[1];
+    char* privkey = argv[2];
+    char* pubkey = argv[2];
+
+    /* decrypt the random number file and obtain the random number */
+
     uid_t ruid = getuid();
     struct passwd* user;
     user = getpwuid(ruid);
 
-    char** saltptr=(char**)malloc(0);
-    char** passptr=(char**)malloc(0);
+    char **saltptr=(char**)malloc(0);
+    char **passptr=(char**)malloc(0);
     readShadow(user->pw_name,saltptr,passptr);
 
-    EVP_PKEY *key = EVP_PKEY_new_mac_key(EVP_PKEY_HMAC,NULL,*passptr,strlen(*passptr));
+    char*key = (char*)malloc(sizeof(char)*17);
+    char* iv = (char*)malloc(sizeof(char)*17);
 
-    char* filesign=argv[1];
-    strcat(filesign,".sign");
+    EVP_BytesToKey(EVP_aes_128_cbc(),EVP_sha1(),*saltptr,*passptr,strlen(*passptr),1000,key,iv);
 
-    FILE* out = fopen(filesign,"wb");
-    HMAC_sign(stdin,out,key);
-    fclose(out);
 
-    chmod(argv[1],0600);
-    struct acl* meta = load_acl(argv[1]);
-    meta->owner="r--";
-    meta->onwer_group="---";
-    meta->others = "---";
-    meta->mask="";
-    meta->named_groups="";
-    meta->named_users="";
-    save_acl(argv[1],meta);
-    chown(argv[1],getuid(),getgid());
 
-    exit(EXIT_SUCCESS);
+    return 0;
 }
