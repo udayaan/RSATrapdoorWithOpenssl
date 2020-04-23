@@ -3,3 +3,10 @@ Assumptions:
 2. gen_rand expects user to enter the file name only where the 
 random number should be stored. All the random number files
 stored in home directory.
+3. no file named temp should be created inside the fprogram files folder.
+defenses: 
+1. fget_decrypt checks for read permission
+
+
+./fput_encrypt_rsa.o /home/file public.pem /home/enc1 /home/key  < input
+./fget_decrypt_rsa.o /home/key private.pem /home/enc1

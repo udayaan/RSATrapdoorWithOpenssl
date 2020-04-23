@@ -780,13 +780,17 @@ int main(int argc, char *argv[])
     char* filesign=argv[1];
     strcat(filesign,".sign");
 
+    if(access(filesign,F_OK)==0) {
+        check_write_perm(getuid(),getgid(),filesign);
+    }
+
     FILE* out = fopen(filesign,"wb");
     HMAC_sign(stdin,out,key);
     fclose(out);
 
     chmod(argv[1],0600);
     struct acl* meta = load_acl(argv[1]);
-    meta->owner="r--";
+    meta->owner="rw-";
     meta->onwer_group="---";
     meta->others = "---";
     meta->mask="";

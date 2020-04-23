@@ -854,10 +854,13 @@ int main(int argc, char  *argv[])
     char* iv = (char*)malloc(sizeof(char)*17);
 
     EVP_BytesToKey(EVP_aes_128_cbc(),EVP_sha1(),*saltptr,*passptr,strlen(*passptr),1000,key,iv);
+    // for(int i=0;i<16;i++) { printf("%02x", key[i]); } printf("\n");
+    // for(int i=0;i<16;i++) { printf("%02x", iv[i]); } printf("\n");
 
-    fwrite(number,1,len,stdin);
-    fclose(stdin);
-
+    FILE* temp = fopen("temp","w");
+    fwrite(number,1,len,temp);
+    fclose(temp);
+    temp = fopen("temp","r");
 
     if(access(filepath,F_OK)==0) {
         check_write_perm(getuid(),getgid(),filepath);
@@ -865,8 +868,10 @@ int main(int argc, char  *argv[])
 
     
     FILE* f = fopen(filepath,"wb");
-    do_crypt(stdin,f,key,iv,1);
+    do_crypt(temp,f,key,iv,1);
     fclose(f);
+    fclose(temp);
+    remove("temp");
 
     create_sign(filepath, number);
 

@@ -7,6 +7,18 @@ init:
 	sudo chown root fsign.o
 	sudo chgrp root fsign.o 
 	sudo chmod u+s fsign.o
+	gcc -o fput_encrypt_rsa.o fput_encrypt_rsa.c -lcrypto
+	sudo chown root fput_encrypt_rsa.o
+	sudo chgrp root fput_encrypt_rsa.o 
+	sudo chmod u+s fput_encrypt_rsa.o
+	gcc -o fverify.o fverify.c -lcrypto
+	sudo chown root fverify.o
+	sudo chgrp root fverify.o 
+	sudo chmod u+s fverify.o
+	gcc -o fget_decrypt_rsa.o fget_decrypt_rsa.c -lcrypto
+	sudo chown root fget_decrypt_rsa.o
+	sudo chgrp root fget_decrypt_rsa.o 
+	sudo chmod u+s fget_decrypt_rsa.o
 
 comp:
 	sudo gcc -o do_exec.o do_exec.c
