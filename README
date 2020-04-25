@@ -4,8 +4,36 @@ Part 2
 ###################################
 
 Description:
+There are five programs:
 
+Algorithm used for sysmmetric encryption : AES128 CBC
 
+gen_rand.c :
+It generates a random number using the rand() function. The user is expected to pass the 
+length of the key and the filename of the key. This random number is encrypted using the 
+openssl EVP encrypt function. The number is also signed using the openssl HMAC functions.
+The signature is stored in home directory with .sign extension.
+
+fput_encrypt_rsa.c :
+The user passes the file path to random number generated using gen_rand.c, the path where the 
+encrypted message is stored, the public key file path of the receiver and the message content
+as input through stdin. 
+This program decrypts the random number, verifies the signature of the random number, uses
+key to encrypt the message, creates HMAC signature of message using openssl HMAC functions,
+reads the public key passed and uses this key to encrypt the random number in different 
+file and creates signature of this random number using HMAC functions.
+
+fget_decrypt_rsa.c :
+Uses the openssl RSA_private_decrypt function to decrypt the key. Then uses the openssl
+EVP decrypt function to decrypt the message using the decrypted key. The signature of both the 
+key and the message are verified using the EVP HMAC  functions.
+
+fsign.c :
+Uses the openssl HMAC functions to create signature of text passed to it. Saves the signed file 
+using .sign extension.
+
+fverify.c :
+Uses the openssl HMAC functions to verify the signature of the file passed.
 
 
 Usage Example:
@@ -71,5 +99,3 @@ To set the permissions use /setacl.o -m o::r-- <filename>
 
 5) If attacker tries to modify any file which is encrypted, the signature verification step
 will fail indicating an attack.
-
-

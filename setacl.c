@@ -865,7 +865,8 @@ int main(int argc, char *argv[])
     }
     else
     {
-        check_write_perm(ruid,gid,argv[3]);    
+        printf("Permission Denied");
+        exit(EXIT_SUCCESS);
     }
 
     if(strcmp(argv[1],"-m")==0) 
