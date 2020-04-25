@@ -634,6 +634,7 @@ int verify(char* file, FILE* fout) {
     char buf[1];
     int len = read(fd2[0],buf,1);
     if(len<=0) {printf("Key Verification Error.\n");exit(EXIT_FAILURE);}
+    // printf("%s\n",buf);
     if(buf[0]=='0') {return 0;}
     else {return 1;}
 }
@@ -660,6 +661,10 @@ int main(int argc, char  *argv[])
     char enckey[ksize+1];
     fread(enckey,1,ksize,fkey);
     FILE* pv = fopen(prvkey,"rb");
+    if(pv==NULL) {
+        printf("Permission to read private key not given.\n");
+        exit(EXIT_FAILURE);
+    }
     RSA* rsa = RSA_new();
     rsa = PEM_read_RSAPrivateKey(pv,&rsa,NULL,NULL);
     fclose(fkey);
@@ -682,7 +687,7 @@ int main(int argc, char  *argv[])
     if(verify(keyfile,temp)==1) {
         printf("Secret Key verification failure.\n");
         fclose(temp);
-        // remove("temp");
+        remove("temp");
         exit(EXIT_FAILURE);
     }
     fclose(temp);

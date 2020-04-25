@@ -19,8 +19,6 @@ init:
 	sudo chown root fget_decrypt_rsa.o
 	sudo chgrp root fget_decrypt_rsa.o 
 	sudo chmod u+s fget_decrypt_rsa.o
-
-comp:
 	sudo gcc -o do_exec.o do_exec.c
 	sudo chown root do_exec.o
 	sudo chgrp root do_exec.o

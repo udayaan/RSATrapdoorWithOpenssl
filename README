@@ -1,12 +1,75 @@
+Name: Udayaan Nath
+Roll No: 2017119 
+Part 2
+###################################
+
+Description:
+
+
+
+
+Usage Example:
+
+Type make in terminal to compile all the programs.
+
+Generate private key in PEM format:
+openssl genrsa -out private.pem 2048
+
+Genrate Public key in PEM format:
+openssl rsa -in private.pem -outform PEM -pubout -out public.pem
+
+Sender Generates a random number and stores it in a file:
+./gen_rand.o 16 file
+
+Encrypt: 
+./fput_encrypt_rsa.o /home/file public.pem /home/enc1 /home/key  < input
+
+Decrypt:
+./fget_decrypt_rsa.o /home/key private.pem /home/enc1
+
+
 Assumptions:
 1. gen_rand can generate numbers up to the length of 19.
 2. gen_rand expects user to enter the file name only where the 
 random number should be stored. All the random number files
 stored in home directory.
 3. no file named temp should be created inside the fprogram files folder.
-defenses: 
-1. fget_decrypt checks for read permission
+4. message input needs to be provided through redirection '<' in the terminal.
+The user/sender is expected to delete this plaintext message file after encryption 
+is done. 
+5. All ACL Assumptions are same as in the previous assignment.
+6. Assuming DAC permissions allowed for private and public keys.
 
 
-./fput_encrypt_rsa.o /home/file public.pem /home/enc1 /home/key  < input
-./fget_decrypt_rsa.o /home/key private.pem /home/enc1
+Defense: 
+1) Program terminates gracefully when invalid pubkey/private keys or 
+invalid arguments are provided.
+
+Example:
+./fget_decrypt_rsa.o /home/key  /home/enc1
+output: Invalid arguments
+
+2) The random numbers generated are stored in a file in the home directory.
+These files have only read-write permissions to the owner of the file.
+permissions to read and write should be provided by the owner/ Sender 
+through setacl.o program.
+
+3) Successful working of protection through acls. If sender doesn't give read
+ or write permissions, no other user can Decrypt the encrypted files.
+
+Example: Encrypt a file using any user and decrypt using another user.
+
+4) Even if attacker tries to use do_exec.o to decrypt the encrypted files to
+which he/she has no permissions, permission denied is printed on the terminal.
+
+Example: Encrypt a file using any user and decrypt using another user with use 
+of do_exec.o program.
+
+Ensure that the receiver has atleast read permission to the new key file, the encrypted
+file and the private key.
+To set the permissions use /setacl.o -m o::r-- <filename>
+
+5) If attacker tries to modify any file which is encrypted, the signature verification step
+will fail indicating an attack.
+
+

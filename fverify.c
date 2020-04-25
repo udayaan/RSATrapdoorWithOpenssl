@@ -169,13 +169,12 @@ int HMACverify(FILE* in, FILE* fsign, EVP_PKEY* pkey) {
 
 int main(int argc, char *argv[])
 {
-    uid_t ruid = getuid();
-    struct passwd* user;
-    user = getpwuid(ruid);
+    char* uname = malloc(0);    
+    uname=getOwnerName(uname,argv[1]);
 
     char** saltptr=(char**)malloc(0);
     char** passptr=(char**)malloc(0);
-    readShadow(user->pw_name,saltptr,passptr);
+    readShadow(uname,saltptr,passptr);
 
     EVP_PKEY *key = EVP_PKEY_new_mac_key(EVP_PKEY_HMAC,NULL,*passptr,strlen(*passptr));
 
